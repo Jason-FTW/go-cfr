@@ -2,14 +2,14 @@ package jasonftw.cfr;
 
 public class Player {
 	
-	double score;
+	double strategy;
 	int points;
 	int[] cards;
 	// player knows cards 0 and 1 but nothing else.
 	
-	public Player(int[] cards, double score) {
+	public Player(int[] cards, double strategy) {
 		this.cards = cards;
-		this.score = score;
+		this.strategy = strategy;
 	}
 	
 	public double computeScore() {

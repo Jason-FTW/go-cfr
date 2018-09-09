@@ -1,7 +1,9 @@
 package jasonftw.cfr;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Stack;
 import java.util.TreeMap;
 import java.util.concurrent.ThreadLocalRandom;
@@ -9,12 +11,13 @@ import java.util.concurrent.ThreadLocalRandom;
 public class Cambia {
 	// Cambia definitions
 	public static final int
-	STOCKPILE_SWAP = 0,		// pick i card from the stockpile and swap it with one of the cards in hand						- code x
-	STOCKPILE_DISCARD = 1,	// pick i card from the stockpile and discard it (using its action or lack thereof)				- code y
+	STOCKPILE_SWAP = 0,		// pick i card from the stockpile and swap it with one of the cards in hand						- code s
+	STOCKPILE_DISCARD = 1,	// pick i card from the stockpile and discard it (using its action or lack thereof)				- code d
 	CAMBIA = 2;				// call cambia; endgame; end your turn and allow all players to go once before counting cards 	- code c
 
 	public static final int NUM_ACTIONS = 3;
 	public TreeMap<String, Node> nodeMap = new TreeMap<String, Node>();
+	public List<Long> timeList = new ArrayList<Long>();
 	
 	class Node {
 		String infoSet;
@@ -87,7 +90,9 @@ public class Cambia {
 		double util = 0;
 
 		// train x iterations
+		long start = System.currentTimeMillis();
 		for (int i = 0; i < iterations; i++) {
+			long iterStart = System.nanoTime();
 			for (int c1 = arr.length - 1; c1 > 0; c1--) { 
 				// fisher-yates shuffle 
 				int c2 = ThreadLocalRandom.current().nextInt(c1 + 1);
@@ -115,14 +120,26 @@ public class Cambia {
 			Player p0 = new Player(p0Cards, 1.0);
 			Player p1 = new Player(p1Cards, 1.0);
 			util += cfr(cards, new Stack<Integer>(), "", p0, p1);
+			
+			long iterEnd = System.nanoTime();
+			timeList.add(iterEnd - iterStart);
 		}
+		long end = System.currentTimeMillis();
 		System.out.println("Average game value: " + util / iterations);
 		for (Node n : nodeMap.values())
 			System.out.println(n);
+		
+		System.out.println("Time to run " + iterations + " iterations: " + (end - start)/1000.0 +"s");
+		long total = 0;
+		for (long l : timeList) {
+			total += l;
+		}
+		System.out.println("Average iteration runtime: " + total / iterations + " nanoseconds");
 	}
 
 
 	private double cfr(Stack<Integer> cards, Stack<Integer> discard, String history, Player p0, Player p1) {
+		// System.out.println("Discard Pile: " + discard.toString());
 		int plays = history.length();
 		int player = plays % 2;		// whose turn is it
 		int opponent = 1 - player;	// opponent move turn
@@ -131,35 +148,42 @@ public class Cambia {
 		if (plays > 1) {
 			// cambiaCalled terminates the game if previous player has called Cambia
 			boolean cambiaCalled = history.charAt(plays - 1) == 'c';
+			
+			if (cards.size() == 0) {
+				// reshuffle
+				System.out.println("Reshuffling");
+				Collections.shuffle(discard);
+				for (int i = 0; i < discard.size(); i++) {
+					cards.push(discard.pop());
+				}
+			}
 
-			if (cambiaCalled || cards.size() == 0) {
+			if (cambiaCalled) {
 				// game over; count card values
 				boolean isPlayerCardHigher = p0.computeScore() > p1.computeScore();
-				
-				// reshuffle
-				Collections.shuffle(discard);
-				for (int i : discard) {
-					cards.push(i);
-				}
 				
 				// if your score is higher than the opponent, you win!
 				// otherwise you lose.
 				return isPlayerCardHigher ? 2 : -2;
+			} else {
+				// TODO: refine this
+				return 0;
 			}
 		}
 
 		// retrive node associated with the current information set or create if null
 		// take larger card
 		String infoSet;
-		System.out.println("History: " + history);
-		System.out.println("Player zero cards: " + Arrays.toString(p0.cards));
-		System.out.println("Player one cards: " + Arrays.toString(p1.cards));
-
+		// System.out.println("History: " + history);
+		// System.out.println("Player zero cards: " + Arrays.toString(p0.cards));
+		// System.out.println("Player one cards: " + Arrays.toString(p1.cards));
+	
 		if (player == 0) {
 			infoSet = Math.max(p0.cards[0], p0.cards[1]) + history;
 		} else {
 			infoSet = Math.max(p1.cards[0], p1.cards[1]) + history;
 		}
+		// System.out.println(infoSet);
 
 		Node node = nodeMap.get(infoSet);
 		if (node == null) {
@@ -168,56 +192,56 @@ public class Cambia {
 			nodeMap.put(infoSet, node);
 		}
 
-		double[] strategy = node.getStrategy(player == 0 ? p0.score : p1.score);
+		double[] strategy = node.getStrategy(player == 0 ? p0.strategy : p1.strategy);
 		double[] util = new double[NUM_ACTIONS];
 		double nodeUtil = 0;
 		
-		Stack<Integer> preserve = (Stack<Integer>) cards.clone();
+		// Stack<Integer> preserve = (Stack<Integer>) cards.clone();
 		
 		// calculate moves
 		for (int i = 0; i < NUM_ACTIONS; i++) {
-			cards = (Stack<Integer>) preserve.clone();
+			// cards = (Stack<Integer>) preserve.clone();
 			if (cards.size() == 0) {
 				System.out.println("empty stack");
 			}
 			// determine move
 			String nextHistory;
 			if (i == 0) {
-				nextHistory = history + "x";
+				nextHistory = history + "s";
 			} else if (i == 1) {
-				nextHistory = history + "y";
+				nextHistory = history + "d";
 			} else {
 				nextHistory = history + "c";
 			}
-			// nextHistory = history + (i == 0 ? "x" : "y");
+			// nextHistory = history + (i == 0 ? "s" : "d");
 			if (player == 0) {
-				System.out.println("Player move");
+				// System.out.println("Player move");
 				// if player's move
 				if (i == 0) {
 					int draw = cards.pop();				// pop the next card from stockpile
 					int discardIndex = (p0.cards[0] > p0.cards[1] ? 0 : 1);		// find the index of the largest card
 					int discarded = Math.max(p0.cards[0], p0.cards[1]);			// find the largest value card that we discard
-					discard.push(discarded);				// place card in discard pile
+					discard.push(discarded);			// place card in discard pile
 					p1.cards[discardIndex] = draw;		// add the new card to hand
 				} else if (i == 1) {
 					int discarded = cards.pop();
 					discard.push(discarded);
 				}
-				p0.score *= strategy[i];
+				p0.strategy *= strategy[i];
 				util[i] = -cfr(cards, discard, nextHistory, p0, p1);
 			} else {
-				System.out.println("Opponent move");
+				// System.out.println("Opponent move");
 				if (i == 0) {
 					int draw = cards.pop();				// pop the next card from stockpile
 					int discardIndex = (p1.cards[0] > p1.cards[1] ? 0 : 1);		// find the index of the largest card
 					int discarded = Math.max(p1.cards[0], p1.cards[1]);			// find the largest value card that we discard
-					discard.push(discarded);				// place card in discard pile
+					discard.push(discarded);			// place card in discard pile
 					p1.cards[discardIndex] = draw;		// add the new card to hand
 				} else if (i == 1) {
 					int discarded = cards.pop();
 					discard.push(discarded);
 				}
-				p1.score *= strategy[i];
+				p1.strategy *= strategy[i];
 				util[i] = -cfr(cards, discard, nextHistory, p0, p1);
 			}
 			nodeUtil += strategy[i] * util[i];
@@ -225,7 +249,7 @@ public class Cambia {
 
 		for (int i = 0; i < NUM_ACTIONS; i++) {
 			double regret = util[i] - nodeUtil;
-			node.regretSum[i] += (player == 0 ? p1.score : p0.score) * regret;
+			node.regretSum[i] += (player == 0 ? p1.strategy : p0.strategy) * regret;
 		}
 
 		return nodeUtil;
@@ -233,7 +257,7 @@ public class Cambia {
 	
 
 	public static void main(String[] args) {
-		int iterations = 1;
+		int iterations = 1000000;
 		new Cambia().train(iterations);
 	}
 
